@@ -11,6 +11,7 @@ command_exists() {
 
 BASE_PKGS=(wget wine winetricks zenity xdg-utils desktop-file-utils libglib2.0-bin)
 MANGOHUD_PKGS=(mangohud)
+WINESERVER_PATHS=(/usr/lib/x86_64-linux-gnu/wine/wineserver /usr/lib/wine/wineserver64 /usr/lib/wine/wineserver)
 
 pkg_installed() { dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q '^install ok installed'; }
 pkg_install() { sudo apt-get update && sudo apt-get install -y "$@"; }
@@ -64,6 +65,26 @@ echo "Using Wine prefix: $WINEPREFIX"
 echo "Preparing system and installing packages (Wine, Zenity, Winetricks)..."
 install_pkgs "${BASE_PKGS[@]}"
 
+# Ubuntu 26.04 (wine 10.0) ships wineserver outside of PATH (/usr/lib/x86_64-linux-gnu/wine/),
+# so locate it and pass it to winetricks via WINESERVER.
+if [ -z "${WINESERVER:-}" ]; then
+    if command_exists wineserver; then
+        WINESERVER="$(command -v wineserver)"
+    else
+        for candidate in "${WINESERVER_PATHS[@]}"; do
+            if [ -x "$candidate" ]; then
+                WINESERVER="$candidate"
+                break
+            fi
+        done
+    fi
+fi
+if [ -z "${WINESERVER:-}" ]; then
+    echo "Error: wineserver was not found. Please check your Wine installation."
+    exit 1
+fi
+export WINESERVER
+
 # 2. NVIDIA Detection and Variable Setup
 # We check for nvidia-smi to see if Hardware + Drivers are present
 extra_env=""
@@ -111,7 +132,7 @@ fi
 echo "Starting WBS Installer..."
 # Windows installers often return non-zero codes; success is verified below.
 wine "$INSTALLER" || echo "Warning: The installer returned a non-zero exit code. Checking installation..."
-wineserver -w || true
+"$WINESERVER" -w || true
 
 # 6. Locate the installed application and create the launch script
 # This script will be called by the browser via the URI handler
